@@ -10,7 +10,7 @@ Pipeline:
 1. Compress each relation with PCA (k components chosen by explained variance + LOO RMSE criteria)
 2. Fit one GP per PC score as a function of the 5 input parameters
 3. Validate with leave-one-out cross-validation
-4. Run MCMC inference using the emulator likelihood
+4. Run MCMC inference using the emulator likelihood (two formulations: data-space and PC-space)
 
 ## Requirements
 
@@ -30,10 +30,13 @@ python scripts/01_sanity_plots.py    # visual data checks
 python scripts/02_pca_validation.py  # choose k, save results/pca_k.json
 python scripts/03_emulator.py        # fit + validate emulator
 python scripts/04_oneparam_plots.py  # 1-parameter variation plots
-python scripts/05_mcmc.py            # MCMC demo on 3 mock observations
+python scripts/05_mcmc.py            # MCMC demo: data-space likelihood, LOO emulator per mock
+python scripts/05b_mcmc_pcspace.py  # MCMC demo: PC-space likelihood, LOO emulator per mock
 ```
 
 Intermediate results are cached in `results/` and figures in `figures/`.
+
+**MCMC likelihoods:** Two formulations are implemented. The data-space version (`05_mcmc.py`) propagates GP uncertainty back through the PCA inverse transform and evaluates a per-bin Gaussian likelihood. The PC-space version (`05b_mcmc_pcspace.py`) projects the observation into PC score space and evaluates the likelihood there directly, including a log-det normalization term. Both use leave-one-out (LOO) emulator refitting — the GP is refit excluding each mock observation before its MCMC run, ensuring the predictive uncertainty at the test point is genuine interpolation uncertainty.
 
 ## Dataset
 
