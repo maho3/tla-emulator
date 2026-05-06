@@ -1,4 +1,4 @@
-# cosmo-bh-emulator
+# tla-emulator
 
 A PCA+Gaussian Process emulator for black hole physics in cosmological simulations, with MCMC-based parameter inference.
 
