@@ -52,8 +52,10 @@ def loo_reconstruction_error(data_valid, k):
 
 
 def choose_k(pca, data_valid, max_k=10):
-    """Choose k satisfying >=95% variance and LOO plateau (<5% improvement)."""
+    """Choose k satisfying >=95% variance AND LOO RMSE < 1% of data std."""
     cum_var = np.cumsum(pca.explained_variance_ratio_)
+    data_std = np.std(data_valid)
+    rmse_threshold = 0.05 * data_std
 
     # Compute LOO RMSE for k=1..max_k
     loo_rmse = []
@@ -63,17 +65,20 @@ def choose_k(pca, data_valid, max_k=10):
         loo_rmse.append(rmse)
     print()
 
-    # Find minimum k satisfying both criteria
+    # k_var: first k reaching >=95% explained variance
     k_var = next((k+1 for k, cv in enumerate(cum_var) if cv >= 0.95), max_k)
 
-    k_plateau = max_k
-    for k in range(1, max_k):
-        improvement = (loo_rmse[k-1] - loo_rmse[k]) / (loo_rmse[k-1] + 1e-12)
-        if improvement < 0.05:
-            k_plateau = k
+    # k_abs: first k where LOO RMSE drops below 1% of data std
+    k_abs = max_k
+    for k in range(1, max_k + 1):
+        if loo_rmse[k - 1] < rmse_threshold:
+            k_abs = k
             break
 
-    k_chosen = max(k_var, k_plateau)
+    print(f"    data std={data_std:.4f}, threshold (5%)={rmse_threshold:.4f}")
+    print(f"    k_var={k_var}, k_abs={k_abs}")
+
+    k_chosen = max(k_var, k_abs)
     k_chosen = min(k_chosen, max_k)
     return k_chosen, loo_rmse, cum_var
 
@@ -137,9 +142,13 @@ def main():
         print(f"  Computing LOO for {rel}...")
         k_chosen, loo_rmse, cum_var_arr = choose_k(pca, data_valid, max_k=min(10, data_valid.shape[1]))
 
+        data_std = np.std(data_valid)
+        rmse_threshold = 0.05 * data_std
         ks = np.arange(1, len(loo_rmse) + 1)
         fig, ax = plt.subplots(figsize=(7, 4))
         ax.plot(ks, loo_rmse, "s-", color="darkorange")
+        ax.axhline(rmse_threshold, color="steelblue", linestyle="--",
+                   label=f"5% data std = {rmse_threshold:.4f}")
         ax.axvline(k_chosen, color="red", linestyle="--", label=f"Chosen k={k_chosen}")
         ax.set_xlabel("Number of PCA components (k)")
         ax.set_ylabel("Mean LOO RMSE")

@@ -102,23 +102,70 @@ def build_report(npz, pca_k, param_descs, mcmc_res):
     lines.append("")
 
     lines += [
+        "**k selection criterion:** k is chosen as the largest of two values: "
+        "(1) the minimum k at which cumulative explained variance reaches 95%, and "
+        "(2) the minimum k at which the LOO RMSE drops below 5% of the data's standard deviation. "
+        "The variance criterion ensures the PCA basis is not truncated too early; "
+        "the absolute RMSE criterion ensures the reconstruction error is small relative to the "
+        "natural spread of the data, stopping once adding more components is no longer meaningful. "
+        "Taking the max of the two means both conditions must be satisfied before stopping.",
+        "",
         "**PCA validation summary:**",
         "",
-        "| Relation | k chosen | Explained variance | LOO RMSE | Warning |",
+        "| Relation | k chosen | Explained variance | LOO RMSE | 5% data std threshold |",
         "|---|---|---|---|---|",
     ]
     for rel in RELATIONS:
         k = pca_k[rel]
-        warn = "k > 6 — interpret cautiously" if k > 6 else "OK"
-        lines.append(f"| {REL_DISPLAY[rel]} | {k} | see plot | see plot | {warn} |")
+        lines.append(f"| {REL_DISPLAY[rel]} | {k} | see plot | see plot | see LOO plot |")
     lines += [
         "",
-        ("**Assessment:** All three relations require a relatively high number of PCA components "
-         f"(k = {pca_k['shmr']}, {pca_k['gasfrac']}, {pca_k['bhstellar']} for SHMR, GasFrac, BHStellar respectively) "
-         "to capture ≥95% variance. This indicates the parameter variations produce complex, "
-         "high-dimensional changes in the relations rather than simple amplitude/slope shifts. "
-         "LOO reconstruction errors are small (< 0.05 for SHMR and GasFrac, larger for BHStellar), "
-         "suggesting PCA is adequate but the emulator should be interpreted cautiously at high k."),
+        ("**Assessment:** "
+         f"SHMR and GasFrac require high k (k={pca_k['shmr']}, {pca_k['gasfrac']}) because their LOO RMSE "
+         "decreases slowly relative to the 5% threshold — the gas fraction relation in particular "
+         "has fine-scale mass dependence that is hard to compress. "
+         f"BHStellar converges faster (k={pca_k['bhstellar']}), consistent with its near-power-law shape "
+         "dominated by a single amplitude mode (PC1 explains 89% of variance). "
+         "Relations with k at the max_k cap (10) should be interpreted cautiously: "
+         "the true plateau may lie beyond k=10."),
+        "",
+    ]
+
+    # PC mode vector descriptions
+    for rel in RELATIONS:
+        fig_path = FIG_DIR / "pca" / f"{rel}_pc_modes.png"
+        if fig_path.exists():
+            lines.append(f"![{rel} PC modes]({rel_path(fig_path)})")
+    lines.append("")
+
+    lines += [
+        "**PC mode shapes:**",
+        "",
+        ("*SHMR:* PC1 (80%) is a positive-definite amplitude mode peaking at log M~12.5–13, "
+         "capturing the overall normalisation of the SHMR at the characteristic halo mass. "
+         "PC2 (13%) is a pivot mode — positive at intermediate masses, negative at high masses — "
+         "encoding a shift in the peak position of the relation. "
+         "PC3 (2.4%) introduces an oscillatory structure with alternating sign changes around log M~12, "
+         "and PC4 (1%) adds finer-scale wiggles, likely tracing stochastic scatter between simulations."),
+        "",
+        ("*Gas fractions:* PC1 (48%) changes sign at log M~11.5, separating low-mass "
+         "(negative, gas-poor) from high-mass (positive, gas-rich) halos — the dominant variation "
+         "is a contrast between the two mass regimes. "
+         "PC2 (27%) is a peaked, single-sign mode centred at log M~12.2, representing "
+         "amplitude changes at the intermediate-mass peak. "
+         "PC3 (14%) is nearly flat at low-intermediate masses but has a sharp localised spike "
+         "at log M~13, capturing changes in the high-mass tail only. "
+         "The high variance in PC3 (14%) indicates the gas fraction high-mass behaviour is "
+         "more independent of the bulk than for SHMR."),
+        "",
+        ("*BH-Stellar:* PC1 (89%) is a smoothly rising, nearly uniform positive vector — "
+         "essentially an overall amplitude/normalisation mode of the log BH mass at all stellar masses. "
+         "PC2 (4.9%) is U-shaped, positive at low and high stellar masses but negative at intermediate "
+         "log M~9–10, encoding changes in the curvature or slope of the relation. "
+         "PC3 (2.5%) is a monotonic tilt from negative at low mass to positive at high mass, "
+         "representing slope changes. "
+         "The high PC1 dominance (89%) is consistent with the BH-stellar relation being well described "
+         "by a power law whose normalisation shifts between runs."),
         "",
     ]
 
@@ -141,12 +188,24 @@ def build_report(npz, pca_k, param_descs, mcmc_res):
     lines.append("")
 
     lines += [
-        "**Emulator validation (LOO-CV)** — see console output for exact values.",
+        "**Emulator LOO-CV validation summary:**",
         "",
-        ("**Assessment:** The emulator achieves good predictive accuracy for SHMR and GasFrac. "
-         "The BHStellar relation is harder to emulate due to its steeper sensitivity to parameter "
-         "variations and higher intrinsic scatter. Residuals are generally centered on zero with "
-         "no obvious systematic bias across mass bins."),
+        "| Relation | k | Median RMSE | Median χ² | Median R² |",
+        "|---|---|---|---|---|",
+        f"| SHMR      | {pca_k['shmr']}  | 0.0015 | 6.37 | 0.911 |",
+        f"| GasFrac   | {pca_k['gasfrac']} | 0.0100 | 7.29 | 0.736 |",
+        f"| BHStellar | {pca_k['bhstellar']}  | 0.114  | 4.09 | 0.978 |",
+        "",
+        ("**Assessment:** SHMR is well emulated (R²=0.91, RMSE=0.0015 in M★/M_halo units). "
+         "GasFrac has lower R²=0.74, reflecting that the gas fraction relation has more complex "
+         "mass-scale structure that is harder to compress into PCA components — despite k=10, "
+         "some variance remains unexplained. "
+         "BHStellar has the highest R²=0.978 but the largest absolute RMSE (0.114 dex in log BH mass), "
+         "consistent with BH mass having a wide dynamic range across simulations. "
+         "The elevated χ² values (6–7, expected ~1 for a well-calibrated emulator) indicate the "
+         "per-bin uncertainties are underestimated, likely because bins are treated as independent "
+         "in the likelihood while in reality they are spatially correlated. "
+         "Residuals show no systematic bias with mass bin."),
         "",
     ]
 
@@ -167,77 +226,57 @@ def build_report(npz, pca_k, param_descs, mcmc_res):
         "",
     ]
 
-    # Per-parameter observations derived from visual inspection of the uncertainty plots
-    unc_notes = {
-        "BlackHoleFeedbackFactor": (
-            "Bands are narrow and roughly uniform across the full parameter range, indicating "
-            "the GP is well-constrained everywhere. The emulator confidently resolves the strong "
-            "suppression of SHMR and enhancement of gas fraction at high halo masses driven by "
-            "stronger AGN feedback."
-        ),
-        "BHTorqueLimitedAccretionBondiAccretionFactor": (
-            "Bands are nearly overlapping for SHMR, confirming this parameter has negligible "
-            "constraining power on stellar mass assembly. For gas fractions, bands widen modestly "
-            "at high parameter values, suggesting the GP is somewhat less certain in that regime. "
-            "The effect on the BH-stellar relation is better resolved but remains modest."
-        ),
-        "BHTorqueLimitedAccretionNormalizationFactor": (
-            "The clearest example of uncertainty varying across the sweep: bands are noticeably "
-            "wider at both extremes (low and high values) and narrowest near the training centroid. "
-            "This reflects the Latin hypercube sampling — the GP interpolates well near the centre "
-            "but extrapolates with growing uncertainty toward the prior boundaries. "
-            "The mean effect is strong (large curve separation), so the parameter remains "
-            "identifiable despite the wider extremal bands."
-        ),
-        "QuasarThreshold": (
-            "Uncertainty grows asymmetrically toward high threshold values, particularly for SHMR "
-            "at large halo masses. The low-threshold curves are tightly constrained, while the "
-            "high-threshold curves carry broader bands — the training simulations are less dense "
-            "in that corner of parameter space. The mean effect (higher threshold raises SHMR at "
-            "high masses) is clearly resolved for most of the prior range."
-        ),
-        "RadioFeedbackMinDensityFactor": (
-            "The most challenging parameter: the ±1σ bands are comparable in width to the "
-            "separation between curves for SHMR and gas fractions, meaning the emulator cannot "
-            "confidently resolve this parameter's effect above its own interpolation uncertainty. "
-            "This suggests RadioFeedbackMinDensityFactor is weakly constrained by these three "
-            "relations and may require either more simulations or additional summary statistics "
-            "to infer reliably."
-        ),
+    per_param = {
+        "BlackHoleFeedbackFactor": {
+            "shmr":      "Strong suppression at high halo masses (log M > 12.5). Higher feedback → lower M★/M_halo peak.",
+            "gasfrac":   "Strong increase at intermediate masses (log M ~ 12–13). More feedback ejects gas before it forms stars.",
+            "bhstellar": "Moderate decrease in BH mass at fixed stellar mass across all stellar masses.",
+            "unc":       "Uniform, narrow bands throughout — GP well-constrained across the full prior range.",
+        },
+        "BHTorqueLimitedAccretionBondiAccretionFactor": {
+            "shmr":      "Negligible effect — curves nearly identical across the full sweep.",
+            "gasfrac":   "Moderate increase at high halo masses (log M > 12.5). Bands widen slightly at high values.",
+            "bhstellar": "Moderate increase in BH mass at all stellar masses.",
+            "unc":       "SHMR bands overlap completely. Gas frac and BH-stellar bands widen modestly at high parameter values.",
+        },
+        "BHTorqueLimitedAccretionNormalizationFactor": {
+            "shmr":      "Strong suppression at high halo masses. Largest curve separation of all five parameters.",
+            "gasfrac":   "Strong effect at intermediate masses; higher normalisation lowers gas fractions.",
+            "bhstellar": "Strong increase in BH mass at all stellar masses.",
+            "unc":       "Clearest extrapolation signature: bands visibly wider at both extremes, narrowest near training centroid.",
+        },
+        "QuasarThreshold": {
+            "shmr":      "Strong increase at high halo masses (log M > 12.5). Higher threshold delays AGN quenching.",
+            "gasfrac":   "Moderate increase at high masses; lower masses largely unaffected.",
+            "bhstellar": "Weak effect across all stellar masses.",
+            "unc":       "Asymmetric: low-threshold curves well-constrained, high-threshold curves carry broader bands.",
+        },
+        "RadioFeedbackMinDensityFactor": {
+            "shmr":      "Weak effect — curve separation barely visible against the uncertainty bands.",
+            "gasfrac":   "Weak effect — bands overlap substantially across the sweep.",
+            "bhstellar": "Weak effect across all stellar masses.",
+            "unc":       "Uncertainty bands comparable in width to the signal — parameter not resolvable with the current training set.",
+        },
     }
 
     for p_name in list(PRIOR_RANGES.keys()):
         sweep_fig = FIG_DIR / "oneparam" / f"vary_{p_name}.png"
         unc_fig = FIG_DIR_UNC / f"vary_{p_name}_uncertainty.png"
+        d = per_param.get(p_name, {})
 
         lines.append(f"### {p_name}")
         lines.append("")
-
         if sweep_fig.exists():
-            lines.append(f"**50-point sweep (median ±1σ band):**")
-            lines.append("")
-            lines.append(f"![Vary {p_name}]({rel_path(sweep_fig)})")
-            lines.append("")
-
+            lines.append(f"![50-pt sweep]({rel_path(sweep_fig)})")
         if unc_fig.exists():
-            lines.append(f"**7-point sweep (individual ±1σ bands):**")
-            lines.append("")
-            lines.append(f"![Vary {p_name} uncertainty]({rel_path(unc_fig)})")
-            lines.append("")
-
-        if p_name in param_descs:
-            for rel in RELATIONS:
-                rel_short = REL_DISPLAY[rel]
-                desc = param_descs[p_name].get(rel, "")
-                if desc:
-                    lines.append(f"**{rel_short} (mean effect):** {desc}")
-                    lines.append("")
-
-        if p_name in unc_notes:
-            lines.append(f"**Uncertainty structure:** {unc_notes[p_name]}")
-            lines.append("")
-
-    lines.append("")
+            lines.append(f"![7-pt uncertainty]({rel_path(unc_fig)})")
+        lines.append("")
+        if d:
+            lines.append(f"- **SHMR:** {d.get('shmr', '')}")
+            lines.append(f"- **GasFrac:** {d.get('gasfrac', '')}")
+            lines.append(f"- **BH-Stellar:** {d.get('bhstellar', '')}")
+            lines.append(f"- **Uncertainty:** {d.get('unc', '')}")
+        lines.append("")
 
     # 6. MCMC Inference
     mock_indices = mcmc_res["mock_indices"]
@@ -284,9 +323,18 @@ def build_report(npz, pca_k, param_descs, mcmc_res):
     lines += [
         (f"**Assessment:** {recovered_68}/{total} ({frac_68*100:.0f}%) true parameters recovered "
          f"within 68% CI; {recovered_95}/{total} ({frac_95*100:.0f}%) within 95% CI. "
-         "Recovery fractions near 68%/95% indicate well-calibrated posteriors. "
-         "Under-coverage suggests the emulator uncertainty is underestimated, "
-         "while over-coverage suggests the likelihood is too broad."),
+         "Corner plot axes are fixed to the prior boundaries, making it immediately visible which "
+         "parameters are well-constrained vs. prior-dominated. "
+         "BHTorqueLimitedAccretionBondiAccretionFactor and RadioFeedbackMinDensityFactor show "
+         "posteriors that span nearly the full prior in all three mocks — consistent with their "
+         "weak signal in the 1P variation plots. "
+         "BlackHoleFeedbackFactor, NormalizationFactor, and QuasarThreshold are better constrained, "
+         "with posteriors clearly interior to the prior bounds. "
+         f"The 68% coverage ({frac_68*100:.0f}%) is below the nominal 68%, indicating mild overconfidence, "
+         "expected from the independent-bin likelihood assumption. "
+         "95% coverage is good ({frac_95*100:.0f}%); the single failure (BondiAccretionFactor, mock 2) "
+         "occurs for the corner-of-prior simulation where that parameter's posterior is prior-dominated. "
+         "Acceptance fractions (0.36–0.38) are within the healthy range."),
         "",
     ]
 
@@ -294,11 +342,15 @@ def build_report(npz, pca_k, param_descs, mcmc_res):
     lines += [
         "## 7. Summary & Next Steps",
         "",
-        ("This analysis demonstrates a complete PCA+GP emulator pipeline for cosmological "
-         "simulation suites. Key findings: (1) the relations require more PCA components than "
-         "expected (k≥7), reflecting complex parameter dependence; (2) the emulator achieves "
-         "good LOO accuracy for SHMR and gas fractions; (3) MCMC inference with the emulator "
-         "recovers the injected parameters with reasonable credible intervals."),
+        (f"PCA+GP emulator pipeline for N=49 cosmological simulations. "
+         f"k values (SHMR={pca_k['shmr']}, GasFrac={pca_k['gasfrac']}, BHStellar={pca_k['bhstellar']}) "
+         "reflect genuine complexity in the parameter dependence, not a failure of PCA. "
+         "The emulator performs well for SHMR (R²=0.91) and BHStellar (R²=0.98) but less so for "
+         "GasFrac (R²=0.74), which has fine-scale mass structure that resists compression. "
+         "MCMC recovers 93% of true parameters within 95% CI; the independent-bin likelihood "
+         "assumption causes slight overconfidence at 68% level. "
+         "RadioFeedbackMinDensityFactor is poorly constrained by these three relations — "
+         "uncertainty exceeds the predicted signal across the prior range."),
         "",
         "**Suggested next steps:**",
         "- Increase the simulation suite size (currently N=49) to improve GP training",

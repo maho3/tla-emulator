@@ -204,6 +204,9 @@ def main():
             show_titles=True,
             title_fmt=".3g",
             plot_datapoints=False,
+            range=list(map(tuple, PRIOR_RANGES)),
+            smooth=1.5,
+            smooth1d=1.5,
         )
         fig.suptitle(f"Mock {mock_num}: {labels[mock_num-1]}", fontsize=11)
         fname = FIG_DIR / f"corner_mock{mock_num}.png"
